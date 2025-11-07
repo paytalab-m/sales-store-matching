@@ -22,21 +22,35 @@ jobs:
         with:
           python-version: '3.11'
 
-      # 3단계: (수정) Secrets에서 .json 파일 생성 (echo -> printf)
-      - name: Create Google Service Account Key File
-        # (수정) echo는 \n 같은 문자를 잘못 해석할 수 있으므로, printf로 안전하게 파일을 생성합니다.
-        run: printf "%s" "${{ secrets.GOOGLE_AUTH_SECRET }}" > ${{ env.SERVICE_ACCOUNT_FILE }}
+      # 3단계: Base64 Secret을 .json 파일로 디코딩
+      - name: Decode Google Service Account Key File from Base64
+        run: echo "${{ secrets.GOOGLE_AUTH_SECRET }}" | base64 --decode > ${{ env.SERVICE_ACCOUNT_FILE }}
         env:
           SERVICE_ACCOUNT_FILE: msdproject-466902-dd36cca121a8.json
           
-      # 4단계: (신규) JSON 파일 유효성 검사
-      # gspread가 아닌, Python의 내장 json.tool로 파일이 유효한지 "먼저" 검사합니다.
-      # 이 단계가 실패하면, 100% Secret이 잘못 복사되었거나 파일 생성(3단계)에 문제가 있는 것입니다.
+      # 4.0단계: 파일이 비어있는지 확인 (가장 중요)
+      - name: DEBUG - Check if decoded file is empty
+        run: |
+          echo "--- [디버깅 4.0] Base64로 디코딩된 .json 파일이 비어있는지 확인합니다. ---"
+          if [ -s ${{ env.SERVICE_ACCOUNT_FILE }} ]; then
+            echo "[정상] 파일이 비어있지 않습니다. 4.5단계(JSON 검사)로 넘어갑니다."
+          else
+            echo "!!!! [치명적 오류] !!!! Base64 디코딩 결과, .json 파일이 비어있습니다 (0 byte)."
+            echo "이것은 99% 'GOOGLE_AUTH_SECRET' 값이 비어있거나, 유효한 Base64 문자열이 아니라는 의미입니다."
+            echo "가이드 1단계(PowerShell)와 2단계(Secret 붙여넣기)를 다시 확인해주세요."
+            exit 1 # 여기서 워크플로우 중단
+          fi
+        env:
+          SERVICE_ACCOUNT_FILE: msdproject-466902-dd36cca121a8.json
+
+      # 4.5단계: (이전 4단계) JSON 파일 유효성 검사
       - name: DEBUG - Validate the created JSON file
         run: |
-          echo "--- [디버깅 시작] 생성된 .json 파일이 유효한지 검사합니다. ---"
-          python -m json.tool ${{ env.SERVICE_ACCOUNT_FILE }}
-          echo "--- [디버깅 종료] 'No JSON object could be decoded' 오류가 났다면 Secret 값을 확인하세요. ---"
+          echo "--- [디버깅 4.5] .json 파일의 문법을 검사합니다. ---"
+          # python -m json.tool은 성공 시 내용을 출력하므로, /dev/null로 출력을 숨깁니다.
+          # 실패 시(파일이 깨졌을 때)에만 오류를 출력하고 중단됩니다.
+          python -m json.tool ${{ env.SERVICE_ACCOUNT_FILE }} > /dev/null
+          echo "[정상] JSON 문법이 유효합니다. 5단계로 넘어갑니다."
         env:
           SERVICE_ACCOUNT_FILE: msdproject-466902-dd36cca121a8.json
 
@@ -47,6 +61,6 @@ jobs:
           pip install -r requirements.txt
 
       # 6단계: 메인 Python 스크립트 실행
-      # (만약 4단계가 성공했는데 6단계가 실패한다면, 그건 gspread의 다른 문제입니다)
       - name: Run main matching script
+        # (중요 수정) 'match_strokes.py' -> 'match_stores.py' 오타 수정
         run: python match_stores.py
