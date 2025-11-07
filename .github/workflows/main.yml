@@ -1,0 +1,51 @@
+# .github/workflows/main.yml
+
+# 이 자동화 작업의 이름 (GitHub Actions 탭에 표시됨)
+name: 매주 화요일 자동 매칭 실행
+
+# 1. 언제 실행할 것인가?
+on:
+  # (트리거 1) 스케줄 실행:
+  # KST (한국 시간) 기준 매주 화요일 새벽 3시 00분
+  # (UTC 기준으로는 월요일 18시 00분입니다)
+  schedule:
+    - cron: '0 18 * * 1' # [중요] 0분 18시 * * 월요일 (UTC)
+  
+  # (트리거 2) 수동 실행: GitHub Actions 탭에서 'Run workflow' 버튼으로 수동 실행 가능
+  workflow_dispatch:
+
+# 2. 무슨 작업을 할 것인가?
+jobs:
+  run-matching-script:
+    # (환경) 최신 우분투(리눅스) 환경에서 실행
+    runs-on: ubuntu-latest
+    
+    # (작업 단계)
+    steps:
+      # 1단계: GitHub 저장소에 있는 코드를 가상 서버로 가져오기
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # 2단계: Python 3.11 설치
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11' # 로컬 환경과 버전을 맞추는 것이 좋습니다.
+
+      # 3단계: (가장 중요) GitHub Secrets에 숨겨둔 인증키를 실제 .json 파일로 생성
+      - name: Create Google Service Account Key File
+        # 1. GitHub Secrets에 저장된 GOOGLE_AUTH_SECRET 값을 읽어옴
+        # 2. SERVICE_ACCOUNT_FILE 변수에 설정된 'msdproject-466902-dd36cca121a8.json' 이름으로 파일 생성
+        run: echo "${{ secrets.GOOGLE_AUTH_SECRET }}" > ${{ env.SERVICE_ACCOUNT_FILE }}
+        env:
+          SERVICE_ACCOUNT_FILE: msdproject-466902-dd36cca121a8.json # Python 스크립트의 설정과 동일해야 함
+          
+      # 4단계: Python 라이브러리 설치
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      # 5단계: 메인 Python 스크립트 실행
+      - name: Run main matching script
+        run: python match_stores.py
